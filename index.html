@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>HTML 테트리스</title>
+<style>
+body{
+  margin:0;
+  background:#111;
+  color:#fff;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  font-family:Arial;
+}
+.container{display:flex;gap:20px;}
+canvas{background:#000;border:3px solid #555;}
+.panel{width:120px;}
+.shake{animation:shake .15s linear 3;}
+@keyframes shake{
+  0%{transform:translate(0)}
+  25%{transform:translate(-5px)}
+  50%{transform:translate(5px)}
+  75%{transform:translate(-5px)}
+  100%{transform:translate(0)}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <canvas id="game" width="240" height="400"></canvas>
+  <div class="panel">
+    <h3>다음</h3>
+    <canvas id="next" width="80" height="80"></canvas>
+    <h3>HOLD (C)</h3>
+    <canvas id="hold" width="80" height="80"></canvas>
+    <p id="score">점수: 0</p>
+  </div>
+</div>
+
+<script>
+/* ===== 기본 설정 ===== */
+const game = document.getElementById('game');
+const ctx = game.getContext('2d');
+ctx.scale(20,20);
+
+const nextCtx = document.getElementById('next').getContext('2d');
+nextCtx.scale(20,20);
+
+const holdCtx = document.getElementById('hold').getContext('2d');
+holdCtx.scale(20,20);
+
+const COLS=12, ROWS=20;
+
+/* ===== 색상 (얇은 스타일) ===== */
+const COLORS={
+  1:{f:'#ff4444',s:'#ffbbbb'}, // 빨강
+  2:{f:'#ffdd44',s:'#fff5aa'}  // 노랑
+};
+
+/* ===== 테트리스 도형 ===== */
+const SHAPES=[
+ [[1,1,1,1]],
+ [[2,0,0],[2,2,2]],
+ [[0,0,1],[1,1,1]],
+ [[2,2],[2,2]],
+ [[0,1,1],[1,1,0]],
+ [[0,2,0],[2,2,2]],
+ [[1,1,0],[0,1,1]]
+];
+
+const arena=Array.from({length:ROWS},()=>Array(COLS).fill(0));
+
+const player={
+ pos:{x:0,y:0},
+ matrix:null,
+ score:0,
+ hold:null,
+ canHold:true
+};
+
+let next=randomPiece();
+
+/* ===== 유틸 ===== */
+function randomPiece(){
+ return SHAPES[Math.floor(Math.random()*SHAPES.length)]
+   .map(r=>r.slice());
+}
+
+/* ===== 얇은 블록 렌더링 ===== */
+function drawMatrix(matrix,offset,context){
+ const gap=0.08;
+ const size=1-gap*2;
+
+ matrix.forEach((row,y)=>{
+  row.forEach((value,x)=>{
+   if(value){
+    context.fillStyle=COLORS[value].f;
+    context.strokeStyle=COLORS[value].s;
+    context.lineWidth=0.05;
+
+    context.fillRect(
+      x+offset.x+gap,
+      y+offset.y+gap,
+      size,size
+    );
+    context.strokeRect(
+      x+offset.x+gap,
+      y+offset.y+gap,
+      size,size
+    );
+   }
+  });
+ });
+}
+
+function collide(){
+ for(let y=0;y<player.matrix.length;y++){
+  for(let x=0;x<player.matrix[y].length;x++){
+   if(player.matrix[y][x]){
+    const ay=y+player.pos.y;
+    const ax=x+player.pos.x;
+    if(ay<0||ay>=ROWS||ax<0||ax>=COLS||arena[ay][ax]){
+      return true;
+    }
+   }
+  }
+ }
+ return false;
+}
+
+function merge(){
+ player.matrix.forEach((row,y)=>{
+  row.forEach((v,x)=>{
+   if(v) arena[y+player.pos.y][x+player.pos.x]=v;
+  });
+ });
+}
+
+function rotate(m){
+ return m[0].map((_,i)=>m.map(r=>r[i]).reverse());
+}
+
+function playerRotate(){
+ const prevX=player.pos.x;
+ player.matrix=rotate(player.matrix);
+ let offset=1;
+ while(collide()){
+  player.pos.x+=offset;
+  offset=-(offset+(offset>0?1:-1));
+  if(offset>player.matrix[0].length){
+    player.matrix=rotate(rotate(rotate(player.matrix)));
+    player.pos.x=prevX;
+    return;
+  }
+ }
+}
+
+function sweep(){
+ let lines=0;
+ outer:for(let y=ROWS-1;y>=0;y--){
+  for(let x=0;x<COLS;x++){
+   if(arena[y][x]===0) continue outer;
+  }
+  arena.splice(y,1);
+  arena.unshift(Array(COLS).fill(0));
+  lines++; y++;
+ }
+ if(lines){
+  game.classList.add('shake');
+  setTimeout(()=>game.classList.remove('shake'),200);
+  player.score+=lines*100;
+  score.innerText=`점수: ${player.score}`;
+ }
+}
+
+function reset(){
+ player.matrix=next;
+ next=randomPiece();
+ player.pos.y=0;
+ player.pos.x=(COLS/2|0)-(player.matrix[0].length/2|0);
+ player.canHold=true;
+ drawNext();
+ if(collide()){
+  arena.forEach(r=>r.fill(0));
+  player.score=0;
+ }
+}
+
+function drawNext(){
+ nextCtx.clearRect(0,0,4,4);
+ drawMatrix(next,{x:1,y:1},nextCtx);
+}
+
+function drawHold(){
+ holdCtx.clearRect(0,0,4,4);
+ if(player.hold) drawMatrix(player.hold,{x:1,y:1},holdCtx);
+}
+
+function hold(){
+ if(!player.canHold) return;
+ player.canHold=false;
+
+ if(!player.hold){
+  player.hold=player.matrix;
+  reset();
+ }else{
+  [player.matrix,player.hold]=[player.hold,player.matrix];
+  player.pos.y=0;
+  player.pos.x=(COLS/2|0)-(player.matrix[0].length/2|0);
+ }
+ drawHold();
+}
+
+function drop(){
+ player.pos.y++;
+ if(collide()){
+  player.pos.y--;
+  merge();
+  sweep();
+  reset();
+ }
+}
+
+let last=0,acc=0,interval=500;
+function update(t=0){
+ acc+=t-last; last=t;
+ if(acc>interval){drop();acc=0;}
+ ctx.clearRect(0,0,game.width,game.height);
+ drawMatrix(arena,{x:0,y:0},ctx);
+ drawMatrix(player.matrix,player.pos,ctx);
+ requestAnimationFrame(update);
+}
+
+/* ===== 입력 ===== */
+document.addEventListener('keydown',e=>{
+ if(e.key==='ArrowLeft'){player.pos.x--; if(collide()) player.pos.x++;}
+ if(e.key==='ArrowRight'){player.pos.x++; if(collide()) player.pos.x--;}
+ if(e.key==='ArrowDown') drop();
+ if(e.key==='ArrowUp') playerRotate();
+ if(e.code==='Space'){while(!collide())player.pos.y++;player.pos.y--;drop();}
+ if(e.key==='c'||e.key==='C') hold();
+});
+
+reset();
+update();
+</script>
+</body>
+</html>
